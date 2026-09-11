@@ -220,3 +220,31 @@ h1 { margin: 0; font-size: 26px; letter-spacing: -.03em; }
 }
 
 .logout-button:hover { color: #fff; border-color: #48505d; }
+
+.expand-videos {
+  width: 100%; border: 0; background: transparent; padding: 9px 0 7px; color: #666b73;
+  display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 650; text-align: left;
+}
+.expand-videos:hover { color: #202124; }
+.arrow { display: inline-block; font-size: 19px; line-height: 12px; transition: transform .15s ease; }
+.arrow.open { transform: rotate(90deg); }
+.videos-panel { border-top: 1px solid #f0f1f3; padding: 12px 0 4px; }
+.videos-header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.videos-header strong { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+.videos-header span { color: #8b8f96; font-size: 11px; }
+.video-list { display: grid; gap: 5px; }
+.video-row { width: 100%; min-height: 56px; display: grid; grid-template-columns: 78px minmax(180px, 1fr) 110px 105px 42px; align-items: center; gap: 10px; padding: 5px 8px; border: 1px solid transparent; border-radius: 8px; background: #fafbfc; color: #202124; text-align: left; }
+.video-row:not(.readonly) { cursor: pointer; }
+.video-row:not(.readonly):hover { border-color: #d9dce1; background: #f5f6f8; }
+.video-row.selected { border-color: #aeb4bc; background: #f0f2f4; }
+.video-row.readonly { cursor: default; }
+.video-row img, .video-thumb-placeholder { width: 78px; height: 44px; object-fit: cover; border-radius: 5px; background: #e4e6e9; }
+.video-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 650; }
+.video-stat { color: #777b83; font-size: 11px; white-space: nowrap; }
+.video-check { color: #5e646d; font-size: 12px; font-weight: 750; text-align: center; }
+.videos-empty, .videos-error { padding: 16px 4px; color: #888c94; font-size: 12px; }
+.videos-error { color: #9a4d4d; }
+@media (max-width: 900px) {
+  .video-row { grid-template-columns: 78px minmax(120px, 1fr) 85px 85px 35px; }
+  .videos-header { align-items: flex-start; flex-direction: column; gap: 3px; }
+}

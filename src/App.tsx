@@ -24,6 +24,18 @@ type Channel = {
   rejection_reason: Reason | null;
 };
 
+type Video = {
+  video_id: string;
+  channel_id: string;
+  title: string | null;
+  thumbnail_url: string | null;
+  published_at: string | null;
+  view_count: number | null;
+  like_count: number | null;
+  comment_count: number | null;
+  selected: boolean;
+};
+
 const reasons: Reason[] = [
   "followers",
   "avg views",
@@ -112,10 +124,10 @@ function ChannelReview({ onLogout }: { onLogout: () => void }) {
   const [status, setStatus] = useState<Status>("pending");
   const [search, setSearch] = useState("");
   const [filtersEnabled, setFiltersEnabled] = useState(true);
-  const [minSubs, setMinSubs] = useState("");
-  const [maxSubs, setMaxSubs] = useState("");
-  const [minViews, setMinViews] = useState("");
-  const [minEngagement, setMinEngagement] = useState("");
+  const [minSubs, setMinSubs] = useState("50000");
+  const [maxSubs, setMaxSubs] = useState("1000000");
+  const [minViews, setMinViews] = useState("50000");
+  const [minEngagement, setMinEngagement] = useState("1");
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -131,7 +143,7 @@ function ChannelReview({ onLogout }: { onLogout: () => void }) {
       minSubs: filtersEnabled ? minSubs || "0" : "0",
       maxSubs: filtersEnabled ? maxSubs || String(Number.MAX_SAFE_INTEGER) : String(Number.MAX_SAFE_INTEGER),
       minViews: filtersEnabled ? minViews || "0" : "0",
-      minEngagement: filtersEnabled ? minEngagement || "0" : "0"
+      minEngagementPercent: filtersEnabled ? minEngagement || "0" : "0"
     });
 
     try {
@@ -160,11 +172,11 @@ function ChannelReview({ onLogout }: { onLogout: () => void }) {
     setFiltersEnabled(next !== "pending");
   }
 
-  async function updateStatus(channelId: string, valid: boolean, rejectionReason?: Reason) {
+  async function updateStatus(channelId: string, valid: boolean, rejectionReason?: Reason, selectedVideoId?: string) {
     const response = await fetch(`/api/channels/${channelId}/status`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ valid, rejectionReason })
+      body: JSON.stringify({ valid, rejectionReason, selectedVideoId })
     });
 
     if (!response.ok) {
@@ -242,7 +254,7 @@ function ChannelReview({ onLogout }: { onLogout: () => void }) {
               channel={channel}
               status={status}
               onOpenImage={(src, alt) => setLightbox({ src, alt })}
-              onValidate={() => updateStatus(channel.channel_id, true)}
+              onValidate={(selectedVideoId) => updateStatus(channel.channel_id, true, undefined, selectedVideoId)}
               onInvalidate={(reason) => updateStatus(channel.channel_id, false, reason)}
             />
           ))}
@@ -288,11 +300,36 @@ function ChannelCard({
   channel: Channel;
   status: Status;
   onOpenImage: (src: string, alt: string) => void;
-  onValidate: () => Promise<void>;
+  onValidate: (selectedVideoId: string) => Promise<void>;
   onInvalidate: (reason: Reason) => Promise<void>;
 }) {
   const [reason, setReason] = useState<Reason>("followers");
   const [busy, setBusy] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const [videos, setVideos] = useState<Video[]>([]);
+  const [videosLoading, setVideosLoading] = useState(false);
+  const [videoError, setVideoError] = useState("");
+  const [selectedVideoId, setSelectedVideoId] = useState<string | null>(null);
+
+  async function toggleVideos() {
+    const next = !expanded;
+    setExpanded(next);
+    if (!next || videos.length > 0 || videosLoading) return;
+    setVideosLoading(true);
+    setVideoError("");
+    try {
+      const response = await fetch(`/api/channels/${channel.channel_id}/videos`, { credentials: "include" });
+      if (!response.ok) throw new Error("Could not load videos");
+      const data: Video[] = await response.json();
+      setVideos(data);
+      const existing = data.find(video => video.selected);
+      if (existing) setSelectedVideoId(existing.video_id);
+    } catch (e) {
+      setVideoError(e instanceof Error ? e.message : "Could not load videos");
+    } finally {
+      setVideosLoading(false);
+    }
+  }
 
   async function run(action: () => Promise<void>) {
     setBusy(true);
@@ -310,6 +347,10 @@ function ChannelCard({
       </div>
 
       <div className="card-body">
+        <button className="expand-videos" onClick={toggleVideos} aria-expanded={expanded}>
+          <span className={`arrow ${expanded ? "open" : ""}`}>›</span>
+          {expanded ? "Hide last 15 videos" : "Show last 15 videos"}
+        </button>
         <div className="identity">
           {channel.profile_photo_url ? (
             <img
@@ -337,12 +378,43 @@ function ChannelCard({
           <Metric label="Videos / 30d" value={formatNumber(channel.videos_last_month)} compact />
         </div>
 
+        {expanded && (
+          <div className="videos-panel">
+            <div className="videos-header">
+              <strong>Videos with views & likes</strong>
+              {status === "pending" && <span>Select one video to validate this channel</span>}
+            </div>
+            {videosLoading && <div className="videos-empty">Loading videos…</div>}
+            {videoError && <div className="videos-error">{videoError}</div>}
+            {!videosLoading && !videoError && videos.length === 0 && <div className="videos-empty">No qualifying videos found.</div>}
+            {!videosLoading && videos.length > 0 && (
+              <div className="video-list">
+                {videos.map(video => (
+                  <button
+                    key={video.video_id}
+                    type="button"
+                    className={`video-row ${selectedVideoId === video.video_id ? "selected" : ""} ${status !== "pending" ? "readonly" : ""}`}
+                    onClick={() => status === "pending" && setSelectedVideoId(video.video_id)}
+                  >
+                    {video.thumbnail_url ? <img src={video.thumbnail_url} alt="" /> : <div className="video-thumb-placeholder" />}
+                    <span className="video-title">{video.title || "Untitled video"}</span>
+                    <span className="video-stat">{formatNumber(video.view_count)} views</span>
+                    <span className="video-stat">{formatNumber(video.like_count)} likes</span>
+                    {status === "pending" && <span className="video-check">{selectedVideoId === video.video_id ? "✓" : "○"}</span>}
+                    {status !== "pending" && video.selected && <span className="video-check">Selected</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         <div className="card-footer">
           <code>{channel.channel_id}</code>
 
           {status === "pending" && (
             <div className="actions">
-              <button className="validate" disabled={busy} onClick={() => run(onValidate)}>
+              <button className="validate" disabled={busy || !selectedVideoId} onClick={() => selectedVideoId && run(() => onValidate(selectedVideoId))}>
                 ✓ Validate
               </button>
               <select
