@@ -59,7 +59,56 @@ function channelUrl(handle: string | null) {
   return handle ? `https://www.youtube.com/@${handle.replace(/^@/, "")}` : null;
 }
 
-export default function App() {
+function Login({ onLogin }: { onLogin: () => void }) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ username, password })
+      });
+      if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error ?? "Login failed");
+      onLogin();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Login failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="login-shell">
+      <form className="login-card" onSubmit={submit}>
+        <div className="brand large">CR</div>
+        <p className="eyebrow">CHANNEL REVIEW</p>
+        <h1>Sign in</h1>
+        <p className="login-subtitle">Use your review account credentials.</p>
+        <label className="login-field">
+          <span>Username</span>
+          <input autoComplete="username" value={username} onChange={e => setUsername(e.target.value)} required />
+        </label>
+        <label className="login-field">
+          <span>Password</span>
+          <input type="password" autoComplete="current-password" value={password} onChange={e => setPassword(e.target.value)} required />
+        </label>
+        {error && <div className="error">{error}</div>}
+        <button className="login-button" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
+      </form>
+    </div>
+  );
+}
+
+function ChannelReview({ onLogout }: { onLogout: () => void }) {
+
   const [status, setStatus] = useState<Status>("pending");
   const [search, setSearch] = useState("");
   const [filtersEnabled, setFiltersEnabled] = useState(true);
@@ -153,6 +202,7 @@ export default function App() {
           >
             {filtersEnabled ? "Filters on" : "Filters off"}
           </button>
+          <button className="logout-button" onClick={onLogout}>Sign out</button>
         </header>
 
         <section className="filters">
@@ -325,4 +375,25 @@ function Metric({ label, value, compact = false }: { label: string; value: strin
       <strong>{value}</strong>
     </div>
   );
+}
+}
+
+export default function App() {
+  const [authenticated, setAuthenticated] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    fetch("/api/auth/me", { credentials: "include" })
+      .then(response => response.json())
+      .then(data => setAuthenticated(Boolean(data.authenticated)))
+      .catch(() => setAuthenticated(false));
+  }, []);
+
+  async function logout() {
+    await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+    setAuthenticated(false);
+  }
+
+  if (authenticated === null) return <div className="login-shell"><div className="login-loading">Loading…</div></div>;
+  if (!authenticated) return <Login onLogin={() => setAuthenticated(true)} />;
+  return <ChannelReview onLogout={logout} />;
 }

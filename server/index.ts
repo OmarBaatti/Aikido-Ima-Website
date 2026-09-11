@@ -1,5 +1,6 @@
 import "dotenv/config";
-import express from "express";
+import crypto from "node:crypto";
+import express, { type NextFunction, type Request, type Response } from "express";
 import cors from "cors";
 import pg from "pg";
 
@@ -10,11 +11,86 @@ const port = Number(process.env.PORT ?? 3001);
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL is required");
 }
+if (!process.env.APP_USERNAME || !process.env.APP_PASSWORD) {
+  throw new Error("APP_USERNAME and APP_PASSWORD are required");
+}
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
-app.use(cors({ origin: process.env.CORS_ORIGIN ?? "http://localhost:5173" }));
+app.use(cors({
+  origin: process.env.CORS_ORIGIN ?? true,
+  credentials: true
+}));
 app.use(express.json());
+
+type Session = { expiresAt: number };
+const sessions = new Map<string, Session>();
+const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 7;
+const isProduction = process.env.NODE_ENV === "production";
+
+function parseCookies(req: Request) {
+  const header = req.headers.cookie ?? "";
+  return Object.fromEntries(header.split(";").filter(Boolean).map(part => {
+    const index = part.indexOf("=");
+    const key = part.slice(0, index).trim();
+    const value = decodeURIComponent(part.slice(index + 1).trim());
+    return [key, value];
+  }));
+}
+
+function getSession(req: Request) {
+  const token = parseCookies(req).session;
+  if (!token) return null;
+  const session = sessions.get(token);
+  if (!session || session.expiresAt <= Date.now()) {
+    if (session) sessions.delete(token);
+    return null;
+  }
+  return { token, session };
+}
+
+function requireAuth(req: Request, res: Response, next: NextFunction) {
+  if (!getSession(req)) return res.status(401).json({ error: "Unauthorized" });
+  next();
+}
+
+function setSessionCookie(res: Response, token: string) {
+  const secure = isProduction ? "; Secure" : "";
+  res.setHeader("Set-Cookie", `session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_TTL_MS / 1000}${secure}`);
+}
+
+function clearSessionCookie(res: Response) {
+  res.setHeader("Set-Cookie", "session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0");
+}
+
+app.post("/api/auth/login", async (req, res) => {
+  const { username, password } = req.body ?? {};
+  const safeEqual = (a: string, b: string) => crypto.timingSafeEqual(
+    crypto.createHash("sha256").update(a).digest(),
+    crypto.createHash("sha256").update(b).digest()
+  );
+  const valid = typeof username === "string" && typeof password === "string" &&
+    safeEqual(username, process.env.APP_USERNAME!) &&
+    safeEqual(password, process.env.APP_PASSWORD!);
+
+  if (!valid) return res.status(401).json({ error: "Invalid username or password" });
+
+  const token = crypto.randomBytes(32).toString("hex");
+  sessions.set(token, { expiresAt: Date.now() + SESSION_TTL_MS });
+  setSessionCookie(res, token);
+  res.json({ authenticated: true });
+});
+
+app.post("/api/auth/logout", (req, res) => {
+  const current = getSession(req);
+  if (current) sessions.delete(current.token);
+  clearSessionCookie(res);
+  res.json({ authenticated: false });
+});
+
+app.get("/api/auth/me", (req, res) => {
+  res.json({ authenticated: Boolean(getSession(req)) });
+});
 
 const allowedReasons = [
   "followers",
@@ -26,7 +102,7 @@ const allowedReasons = [
   "other"
 ] as const;
 
-app.get("/api/channels", async (req, res) => {
+app.get("/api/channels", requireAuth, async (req, res) => {
   try {
     const status = String(req.query.status ?? "pending");
     const search = String(req.query.search ?? "").trim();
@@ -90,7 +166,7 @@ app.get("/api/channels", async (req, res) => {
   }
 });
 
-app.patch("/api/channels/:channelId/status", async (req, res) => {
+app.patch("/api/channels/:channelId/status", requireAuth, async (req, res) => {
   const { channelId } = req.params;
   const { valid, rejectionReason } = req.body;
 
@@ -126,5 +202,5 @@ app.get("/api/health", async (_req, res) => {
 });
 
 app.listen(port, () => {
-  console.log(`API listening on http://localhost:${port}`);
+  console.log(`API listening on port ${port}`);
 });
