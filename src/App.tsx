@@ -376,7 +376,6 @@ function Metric({ label, value, compact = false }: { label: string; value: strin
     </div>
   );
 }
-}
 
 export default function App() {
   const [authenticated, setAuthenticated] = useState<boolean | null>(null);

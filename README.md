@@ -15,7 +15,7 @@ A minimal React + TypeScript channel-review UI backed by PostgreSQL.
 
 The browser never receives the PostgreSQL credentials. The app uses a separate review-account username/password configured server-side in `.env`, then stores only a random session ID in an HttpOnly cookie. Sessions expire after 7 days and are held server-side in memory.
 
-For production, use HTTPS. The cookie is automatically marked `Secure` when `NODE_ENV=production`.
+For production, use HTTPS. The cookie is automatically marked `Secure` when `Set NODE_ENV=production in the production process environment (not the .env file used by Vite dev).`.
 
 ## Setup
 
